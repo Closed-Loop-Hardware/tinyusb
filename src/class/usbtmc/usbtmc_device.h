@@ -95,6 +95,10 @@ TU_ATTR_WEAK bool tud_usbtmc_notification_complete_cb(void);
 TU_ATTR_WEAK bool tud_usbtmc_indicator_pulse_cb(tusb_control_request_t const * msg, uint8_t *tmcResult);
 
 #if (CFG_TUD_USBTMC_ENABLE_488)
+// The Status Byte for READ_STATUS_BYTE. With an Interrupt-IN endpoint the driver calls this only once it
+// has claimed the endpoint for the response (USB488 1.0 section 4.3.1.2), so the byte returned is the
+// byte queued, and an application clears RQS here when it returns it set (section 3.4.1). While the
+// endpoint is busy or claimed the driver answers STATUS_INTERRUPT_IN_BUSY without calling this.
 uint8_t tud_usbtmc_get_stb_cb(uint8_t *tmcResult);
 TU_ATTR_WEAK bool tud_usbtmc_msg_trigger_cb(usbtmc_msg_generic_t* msg);
 //TU_ATTR_WEAK bool tud_usbtmc_app_go_to_local_cb();
