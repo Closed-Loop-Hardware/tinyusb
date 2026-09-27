@@ -763,6 +763,30 @@ bool usbtmcd_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request
     return true;
   }
 
+  // SET_INTERFACE: "The device must complete the request. The device must abort the INITIATE actions."
+  // (USBTMC 1.0 section 4.2.1.1, Table 17). usbd completes it once this returns false. Aborted, the
+  // INITIATE's CHECK_STATUS is unexpected (rule 6), a short packet an abort or a clear still owed is not
+  // queued, and after INITIATE_ABORT_BULK_IN, which leaves bulk-OUT neither armed nor Halted, the driver
+  // goes back to NAK for the application to arm it.
+  if((request->bmRequestType_bit.type == TUSB_REQ_TYPE_STANDARD) &&
+     (request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_INTERFACE) &&
+     (request->bRequest == TUSB_REQ_SET_INTERFACE))
+  {
+    if(usbtmc_state.splitInitiate != 0u)
+    {
+      criticalEnter();
+      if(usbtmc_state.splitInitiate == USBTMC_bREQUEST_INITIATE_ABORT_BULK_IN)
+      {
+        usbtmc_state.state = STATE_NAK;
+      }
+      usbtmc_state.splitInitiate = 0u;
+      usbtmc_state.clearShortPending = false;
+      criticalLeave();
+      splitEnded();
+    }
+    return false;
+  }
+
   // Otherwise, we only handle class requests.
   if(request->bmRequestType_bit.type != TUSB_REQ_TYPE_CLASS)
   {
