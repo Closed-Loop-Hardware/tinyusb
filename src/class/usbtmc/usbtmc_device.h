@@ -47,6 +47,7 @@
 // * (successful) tud_usbtmc_check_abort_bulk_in_cb: the driver fills rsp before the call, and
 //   rsp->USBTMC_status is USBTMC_STATUS_SUCCESS when the abort is complete
 // * (successful) tud_usmtmc_bulkOut_clearFeature_cb
+// * tud_usbtmc_split_ended_cb
 
 #if (CFG_TUD_USBTMC_ENABLE_488)
 usbtmc_response_capabilities_488_t const * tud_usbtmc_get_capabilities_cb(void);
@@ -69,9 +70,22 @@ bool tud_usbtmc_initiate_abort_bulk_in_cb(uint8_t *tmcResult);
 bool tud_usbtmc_initiate_abort_bulk_out_cb(uint8_t *tmcResult);
 bool tud_usbtmc_initiate_clear_cb(uint8_t *tmcResult);
 
+// The driver tracks the split transactions (USBTMC 1.0 section 4.2.1.1): a CHECK callback is called
+// only for the CHECK_STATUS of an INITIATE that answered STATUS_SUCCESS and is still outstanding. The
+// driver itself answers an unexpected CHECK_STATUS (STATUS_SPLIT_NOT_IN_PROGRESS) and any class request
+// that arrives while an INITIATE's actions are still running (STATUS_SPLIT_IN_PROGRESS).
 bool tud_usbtmc_check_abort_bulk_in_cb(usbtmc_check_abort_bulk_rsp_t *rsp);
 bool tud_usbtmc_check_abort_bulk_out_cb(usbtmc_check_abort_bulk_rsp_t *rsp);
 bool tud_usbtmc_check_clear_cb(usbtmc_get_clear_status_rsp_t *rsp);
+
+// An INITIATE has ended without its CHECK_STATUS: another class request discarded the CHECK_STATUS
+// once the INITIATE's actions had completed (USBTMC 1.0 section 4.2.1.1 rule 3a), or a SET_INTERFACE
+// aborted the INITIATE (Table 17). The application drops whatever it kept for that INITIATE and calls
+// tud_usbtmc_start_bus_read() when it can take a command: after INITIATE_ABORT_BULK_IN the driver is
+// back in the NAK state, where the CHECK_ABORT_BULK_IN_STATUS would have left it. After INITIATE_CLEAR
+// and INITIATE_ABORT_BULK_OUT bulk-OUT stays Halted until the host clears it. Without this callback the
+// driver calls tud_usbtmc_start_bus_read() itself.
+TU_ATTR_WEAK void tud_usbtmc_split_ended_cb(void);
 
 // The interrupt-IN endpoint buffer was transmitted to the host. Use
 // tud_usbtmc_transmit_notification_data to send another notification.
