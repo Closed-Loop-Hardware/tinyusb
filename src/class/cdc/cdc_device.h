@@ -46,6 +46,12 @@
   #define CFG_TUD_CDC_NOTIFY    0
 #endif
 
+// The longest SEND_ENCAPSULATED_COMMAND the driver takes, and the longest response
+// GET_ENCAPSULATED_RESPONSE can return. A longer command is stalled.
+#ifndef CFG_TUD_CDC_ENCAPSULATED_BUFSIZE
+  #define CFG_TUD_CDC_ENCAPSULATED_BUFSIZE    CFG_TUD_ENDPOINT0_SIZE
+#endif
+
 #ifdef __cplusplus
  extern "C" {
 #endif
@@ -138,6 +144,18 @@ TU_ATTR_ALWAYS_INLINE static inline bool tud_cdc_n_notify_uart_state(uint8_t itf
   notify_msg.serial_state          = *state;
   return tud_cdc_n_notify_msg(itf, &notify_msg);
 }
+
+// Send the RESPONSE_AVAILABLE notification: a response waits for GET_ENCAPSULATED_RESPONSE (PSTN 1.2
+// section 6.5.1, CDC 1.2 section 6.3.2)
+TU_ATTR_ALWAYS_INLINE static inline bool tud_cdc_n_notify_response_available(uint8_t itf) {
+  cdc_notify_msg_t notify_msg;
+  notify_msg.request.bmRequestType = CDC_REQ_TYPE_NOTIF;
+  notify_msg.request.bRequest      = CDC_NOTIF_RESPONSE_AVAILABLE;
+  notify_msg.request.wValue        = 0;
+  notify_msg.request.wIndex        = 0; // filled later
+  notify_msg.request.wLength       = 0;
+  return tud_cdc_n_notify_msg(itf, &notify_msg);
+}
 #endif
 
 //--------------------------------------------------------------------+
@@ -216,6 +234,10 @@ TU_ATTR_ALWAYS_INLINE static inline bool tud_cdc_notify_msg(cdc_notify_msg_t* ms
 TU_ATTR_ALWAYS_INLINE static inline bool tud_cdc_notify_uart_state(const cdc_notify_uart_state_t* state) {
   return tud_cdc_n_notify_uart_state(0, state);
 }
+
+TU_ATTR_ALWAYS_INLINE static inline bool tud_cdc_notify_response_available(void) {
+  return tud_cdc_n_notify_response_available(0);
+}
 #endif
 
 //--------------------------------------------------------------------+
@@ -239,6 +261,16 @@ TU_ATTR_WEAK void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts);
 
 // Invoked when line coding is change via SET_LINE_CODING
 TU_ATTR_WEAK void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const* p_line_coding);
+
+// Invoked when a SEND_ENCAPSULATED_COMMAND has delivered its command (CDC 1.2 section 6.2.1), `len` bytes
+// in the format of the control protocol the interface declares. Without this callback the command is
+// accepted and discarded.
+TU_ATTR_WEAK void tud_cdc_send_encapsulated_command_cb(uint8_t itf, uint8_t const* command, uint16_t len);
+
+// Invoked on GET_ENCAPSULATED_RESPONSE (CDC 1.2 section 6.2.2): copy the response that is available, at
+// most `bufsize` bytes, to `buffer` and return its length; 0 when none is. Without this callback every
+// response is zero bytes long.
+TU_ATTR_WEAK uint16_t tud_cdc_get_encapsulated_response_cb(uint8_t itf, uint8_t* buffer, uint16_t bufsize);
 
 // Invoked when received send break
 // \param[in]  itf  interface for which send break was received.

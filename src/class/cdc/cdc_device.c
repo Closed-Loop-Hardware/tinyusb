@@ -87,6 +87,10 @@ CFG_TUD_MEM_SECTION static cdcd_epbuf_t _cdcd_epbuf[CFG_TUD_CDC];
 
 static tud_cdc_configure_fifo_t _cdcd_fifo_cfg;
 
+// The data stage of SEND_ENCAPSULATED_COMMAND and GET_ENCAPSULATED_RESPONSE. Control transfers take
+// turns, so one serves every interface.
+static uint8_t _cdcd_encapsulated_buf[CFG_TUD_CDC_ENCAPSULATED_BUFSIZE];
+
 static bool _prep_out_transaction(uint8_t itf) {
   const uint8_t rhport = 0;
   cdcd_interface_t* p_cdc = &_cdcd_itf[itf];
@@ -401,6 +405,34 @@ bool cdcd_control_xfer_cb(uint8_t rhport, uint8_t stage, const tusb_control_requ
   TU_VERIFY(itf < CFG_TUD_CDC);
 
   switch (request->bRequest) {
+    // Both Required for the Abstract Control Model (PSTN 1.2 section 6.2.2, Table 11), which is the
+    // only subclass this driver opens.
+    case CDC_REQUEST_SEND_ENCAPSULATED_COMMAND:
+      if (stage == CONTROL_STAGE_SETUP) {
+        TU_VERIFY(request->bmRequestType_bit.direction == TUSB_DIR_OUT);
+        TU_VERIFY(request->wLength <= CFG_TUD_CDC_ENCAPSULATED_BUFSIZE);
+        TU_LOG_DRV("  Send Encapsulated Command\r\n");
+        tud_control_xfer(rhport, request, _cdcd_encapsulated_buf, request->wLength);
+      } else if (stage == CONTROL_STAGE_ACK) {
+        if (tud_cdc_send_encapsulated_command_cb) {
+          tud_cdc_send_encapsulated_command_cb(itf, _cdcd_encapsulated_buf, request->wLength);
+        }
+      }
+      break;
+
+    case CDC_REQUEST_GET_ENCAPSULATED_RESPONSE:
+      if (stage == CONTROL_STAGE_SETUP) {
+        TU_VERIFY(request->bmRequestType_bit.direction == TUSB_DIR_IN);
+        TU_LOG_DRV("  Get Encapsulated Response\r\n");
+        uint16_t len = 0;
+        if (tud_cdc_get_encapsulated_response_cb) {
+          len = tud_cdc_get_encapsulated_response_cb(itf, _cdcd_encapsulated_buf, sizeof(_cdcd_encapsulated_buf));
+          len = tu_min16(len, sizeof(_cdcd_encapsulated_buf));
+        }
+        tud_control_xfer(rhport, request, _cdcd_encapsulated_buf, len);
+      }
+      break;
+
     case CDC_REQUEST_SET_LINE_CODING:
       if (stage == CONTROL_STAGE_SETUP) {
         TU_LOG_DRV("  Set Line Coding\r\n");
