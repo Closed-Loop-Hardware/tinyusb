@@ -412,6 +412,50 @@ typedef struct TU_ATTR_PACKED
 
 TU_VERIFY_STATIC(sizeof(cdc_line_control_state_t) == 2, "size is not correct");
 
+//--------------------------------------------------------------------+
+// Notifications
+//--------------------------------------------------------------------+
+#define CDC_REQ_TYPE_NOTIF 0xA1 ///< Direction IN; Type Class; Recipient Interface
+
+// PSTN 1.2 section 6.5.4 table 31
+typedef union TU_ATTR_PACKED {
+  struct TU_ATTR_PACKED {
+    uint16_t bRxCarrier  : 1; // DCD
+    uint16_t bTxCarrier  : 1; // DSR
+    uint16_t bBreak      : 1; // Break Detected
+    uint16_t bRingSignal : 1;
+    uint16_t bFraming    : 1;
+    uint16_t bParity     : 1;
+    uint16_t bOverRun    : 1;
+    uint16_t             : 9;
+  };
+  struct TU_ATTR_PACKED {
+    uint16_t dcd : 1;
+    uint16_t dsr : 1;
+    uint16_t brk : 1;
+    uint16_t     :13;
+  };
+  uint16_t value;
+} cdc_notify_uart_state_t;
+
+TU_VERIFY_STATIC(sizeof(cdc_notify_uart_state_t) == 2, "size is not correct");
+
+// CDC 1.2 section 6.3.3 table 21
+typedef struct TU_ATTR_PACKED {
+  uint32_t upstream_bitrate;
+  uint32_t downstream_bitrate;
+} cdc_notify_conn_speed_change_t;
+
+typedef struct TU_ATTR_PACKED {
+  tusb_control_request_t request;
+  union {
+    cdc_notify_uart_state_t serial_state;
+    cdc_notify_conn_speed_change_t conn_speed_change;
+  };
+} cdc_notify_msg_t;
+
+TU_VERIFY_STATIC(sizeof(cdc_notify_msg_t) == 16, "size is not correct");
+
 TU_ATTR_PACKED_END  // End of all packed definitions
 TU_ATTR_BIT_FIELD_ORDER_END
 

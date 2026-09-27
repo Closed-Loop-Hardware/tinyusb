@@ -41,6 +41,11 @@
   #define CFG_TUD_CDC_EP_BUFSIZE    (TUD_OPT_HIGH_SPEED ? 512 : 64)
 #endif
 
+// Notifications on the notification endpoint: tud_cdc_n_notify_msg() and the helpers built on it
+#ifndef CFG_TUD_CDC_NOTIFY
+  #define CFG_TUD_CDC_NOTIFY    0
+#endif
+
 #ifdef __cplusplus
  extern "C" {
 #endif
@@ -116,6 +121,25 @@ uint32_t tud_cdc_n_write_available(uint8_t itf);
 // Clear the transmit FIFO
 bool tud_cdc_n_write_clear(uint8_t itf);
 
+#if CFG_TUD_CDC_NOTIFY
+// Queue a notification on the notification endpoint; the driver fills in request.wIndex. Returns false
+// while the device is not ready, the interface has no notification endpoint, or the previous
+// notification has not been read yet; tud_cdc_notify_complete_cb() says when it has.
+bool tud_cdc_n_notify_msg(uint8_t itf, cdc_notify_msg_t* msg);
+
+// Send the SERIAL_STATE notification, the UART state bitmap (PSTN 1.2 section 6.5.4)
+TU_ATTR_ALWAYS_INLINE static inline bool tud_cdc_n_notify_uart_state(uint8_t itf, const cdc_notify_uart_state_t* state) {
+  cdc_notify_msg_t notify_msg;
+  notify_msg.request.bmRequestType = CDC_REQ_TYPE_NOTIF;
+  notify_msg.request.bRequest      = CDC_NOTIF_SERIAL_STATE;
+  notify_msg.request.wValue        = 0;
+  notify_msg.request.wIndex        = 0; // filled later
+  notify_msg.request.wLength       = sizeof(cdc_notify_uart_state_t);
+  notify_msg.serial_state          = *state;
+  return tud_cdc_n_notify_msg(itf, &notify_msg);
+}
+#endif
+
 //--------------------------------------------------------------------+
 // Application API (Single Port)
 //--------------------------------------------------------------------+
@@ -184,6 +208,16 @@ TU_ATTR_ALWAYS_INLINE static inline bool tud_cdc_write_clear(void) {
   return tud_cdc_n_write_clear(0);
 }
 
+#if CFG_TUD_CDC_NOTIFY
+TU_ATTR_ALWAYS_INLINE static inline bool tud_cdc_notify_msg(cdc_notify_msg_t* msg) {
+  return tud_cdc_n_notify_msg(0, msg);
+}
+
+TU_ATTR_ALWAYS_INLINE static inline bool tud_cdc_notify_uart_state(const cdc_notify_uart_state_t* state) {
+  return tud_cdc_n_notify_uart_state(0, state);
+}
+#endif
+
 //--------------------------------------------------------------------+
 // Application Callback API (weak is optional)
 //--------------------------------------------------------------------+
@@ -196,6 +230,9 @@ TU_ATTR_WEAK void tud_cdc_rx_wanted_cb(uint8_t itf, char wanted_char);
 
 // Invoked when a TX is complete and therefore space becomes available in TX buffer
 TU_ATTR_WEAK void tud_cdc_tx_complete_cb(uint8_t itf);
+
+// Invoked when a notification is sent to host
+TU_ATTR_WEAK void tud_cdc_notify_complete_cb(uint8_t itf);
 
 // Invoked when line state DTR & RTS are changed via SET_CONTROL_LINE_STATE
 TU_ATTR_WEAK void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts);

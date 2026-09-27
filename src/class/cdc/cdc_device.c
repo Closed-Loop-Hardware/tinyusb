@@ -74,6 +74,9 @@ typedef struct {
 typedef struct {
   TUD_EPBUF_DEF(epout, CFG_TUD_CDC_EP_BUFSIZE);
   TUD_EPBUF_DEF(epin, CFG_TUD_CDC_EP_BUFSIZE);
+  #if CFG_TUD_CDC_NOTIFY
+  TUD_EPBUF_TYPE_DEF(cdc_notify_msg_t, epnotify);
+  #endif
 } cdcd_epbuf_t;
 
 //--------------------------------------------------------------------+
@@ -141,6 +144,22 @@ uint8_t tud_cdc_n_get_line_state(uint8_t itf) {
 void tud_cdc_n_get_line_coding(uint8_t itf, cdc_line_coding_t* coding) {
   (*coding) = _cdcd_itf[itf].line_coding;
 }
+
+#if CFG_TUD_CDC_NOTIFY
+bool tud_cdc_n_notify_msg(uint8_t itf, cdc_notify_msg_t* msg) {
+  TU_VERIFY(itf < CFG_TUD_CDC);
+  const uint8_t rhport = 0;
+  const cdcd_interface_t* p_cdc = &_cdcd_itf[itf];
+  TU_VERIFY(tud_ready() && p_cdc->ep_notif != 0);
+  TU_VERIFY(usbd_edpt_claim(rhport, p_cdc->ep_notif));
+
+  cdc_notify_msg_t* msg_epbuf = &_cdcd_epbuf[itf].epnotify;
+  *msg_epbuf = *msg;
+  msg_epbuf->request.wIndex = p_cdc->itf_num;
+
+  return usbd_edpt_xfer(rhport, p_cdc->ep_notif, (uint8_t*) msg_epbuf, (uint16_t) (8u + msg_epbuf->request.wLength));
+}
+#endif
 
 void tud_cdc_n_set_wanted_char(uint8_t itf, char wanted) {
   _cdcd_itf[itf].wanted_char = wanted;
@@ -453,7 +472,8 @@ bool cdcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_
   // Identify which interface to use
   for (itf = 0; itf < CFG_TUD_CDC; itf++) {
     p_cdc = &_cdcd_itf[itf];
-    if ((ep_addr == p_cdc->ep_out) || (ep_addr == p_cdc->ep_in)) {
+    if ((ep_addr == p_cdc->ep_out) || (ep_addr == p_cdc->ep_in) ||
+        ((ep_addr == p_cdc->ep_notif) && (ep_addr != 0))) {
       break;
     }
   }
@@ -502,7 +522,12 @@ bool cdcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_
     }
   }
 
-  // nothing to do with notif endpoint for now
+  // Notification sent to host
+  if (ep_addr == p_cdc->ep_notif) {
+    if (tud_cdc_notify_complete_cb) {
+      tud_cdc_notify_complete_cb(itf);
+    }
+  }
 
   return true;
 }
